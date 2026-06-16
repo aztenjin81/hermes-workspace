@@ -237,10 +237,16 @@ function readConfiguredLiveModelEndpoints(): Array<LiveModelEndpoint> {
         resolveConfiguredSecret(block.apiKey) ||
         resolveConfiguredSecret(block.token) ||
         resolveConfiguredSecret(block.api_key_env ? process.env[readString(block.api_key_env)] : '')
+      // Skip providers without an API key — probing them directly would
+      // hammer the upstream with unauthenticated requests (e.g. LiteLLM
+      // with an empty manifest provider key). The gateway's /v1/models
+      // already serves the full catalog so direct probing is only useful
+      // for authenticated endpoints.
+      if (!apiKey) return
       const key = `${provider}\u0000${baseUrl}`
       if (seen.has(key)) return
       seen.add(key)
-      endpoints.push({ provider, baseUrl, apiKey: apiKey || undefined })
+      endpoints.push({ provider, baseUrl, apiKey })
     }
 
     const modelBlock = asRecord(config.model)
@@ -444,9 +450,13 @@ export const Route = createFileRoute('/api/models')({
           // Operations picker only showed the local Workspace subset and drifted
           // from the CLI/backend model universe.
           if (getGatewayCapabilities().models) {
-            const hermesModels = await fetchClaudeModels()
-            models = mergeModelEntries(models, hermesModels)
-            source = source === 'models.json' ? 'models.json+hermes-agent' : 'hermes-agent'
+            try {
+              const hermesModels = await fetchClaudeModels()
+              models = mergeModelEntries(models, hermesModels)
+              source = source === 'models.json' ? 'models.json+hermes-agent' : 'hermes-agent'
+            } catch (err) {
+              console.warn('[models] gateway model list unavailable (proxy may lack upstream auth):', err instanceof Error ? err.message : err)
+            }
           }
 
           // Merge live OpenAI-compatible catalogs from base_url entries that
