@@ -269,12 +269,14 @@ export const BEARER_TOKEN = process.env.HERMES_API_TOKEN || process.env.CLAUDE_A
  * this module is first imported — use this in probe/auth code paths
  * that run during server startup. */
 export function getBearerToken(): string {
-  // First check process.env (populated by Vite's loadEnv -> process.env bridge)
-  const fromEnv = process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || process.env.LITELLM_API_KEY
-  if (fromEnv) return fromEnv
+  return process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || process.env.LITELLM_API_KEY || ''
+}
 
-  // Fallback: read .env file directly (Vite's bridge may not have run yet
-  // during module-load-time execution, e.g. on the first probe).
+// Pre-load bearer token from .env at module load time (synchronous).
+// Reads the first matching key from the project .env or ~/.hermes/.env.
+// This is used by the module-level probe code that fires before Vite's
+// loadEnv bridge has populated process.env for server-side code.
+const _envToken = (() => {
   try {
     const fs = require('node:fs')
     const path = require('node:path')
@@ -299,11 +301,13 @@ export function getBearerToken(): string {
         }
       }
     }
-  } catch {
-    // ignore — .env read is best-effort
-  }
+  } catch {}
   return ''
-}
+})()
+
+/** Cached bearer token — set at module load time from .env file, before
+ * Vite's loadEnv bridge to process.env. Used by authHeaders() below. */
+export const CACHED_BEARER_TOKEN = _envToken || getBearerToken()
 
 /**
  * Dashboard API auth uses the ephemeral session token injected into the
@@ -312,7 +316,7 @@ export function getBearerToken(): string {
  * time the dashboard restarts.
  */
 function authHeaders(): Record<string, string> {
-  const token = getBearerToken()
+  const token = CACHED_BEARER_TOKEN || getBearerToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
