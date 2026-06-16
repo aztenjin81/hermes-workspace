@@ -269,7 +269,40 @@ export const BEARER_TOKEN = process.env.HERMES_API_TOKEN || process.env.CLAUDE_A
  * this module is first imported — use this in probe/auth code paths
  * that run during server startup. */
 export function getBearerToken(): string {
-  return process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || process.env.LITELLM_API_KEY || ''
+  // First check process.env (populated by Vite's loadEnv -> process.env bridge)
+  const fromEnv = process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || process.env.LITELLM_API_KEY
+  if (fromEnv) return fromEnv
+
+  // Fallback: read .env file directly (Vite's bridge may not have run yet
+  // during module-load-time execution, e.g. on the first probe).
+  try {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const home = process.env.HERMES_HOME || process.env.CLAUDE_HOME || require('node:os').homedir()
+    const envPaths = [
+      path.join(process.cwd(), '.env'),
+      path.join(home, '.hermes', '.env'),
+    ]
+    for (const envPath of envPaths) {
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf-8')
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith('#')) continue
+          const eq = trimmed.indexOf('=')
+          if (eq <= 0) continue
+          const key = trimmed.slice(0, eq).trim()
+          const val = trimmed.slice(eq + 1).trim()
+          if ((key === 'LITELLM_API_KEY' || key === 'HERMES_API_TOKEN') && val) {
+            return val
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore — .env read is best-effort
+  }
+  return ''
 }
 
 /**
