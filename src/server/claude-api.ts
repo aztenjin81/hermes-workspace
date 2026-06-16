@@ -6,11 +6,11 @@
  */
 
 import {
-  BEARER_TOKEN,
   CLAUDE_API,
   SESSIONS_API_UNAVAILABLE_MESSAGE,
   dashboardFetch,
   ensureGatewayProbed,
+  getBearerToken,
   getCapabilities,
   probeGateway,
 } from './gateway-capabilities'
@@ -25,8 +25,10 @@ import {
   updateSession as updateDashboardSession,
 } from './claude-dashboard-api'
 
-const _authHeaders = (): Record<string, string> =>
-  BEARER_TOKEN ? { Authorization: `Bearer ${BEARER_TOKEN}` } : {}
+const _authHeaders = (): Record<string, string> => {
+  const token = getBearerToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 console.log(`[claude-api] Configured API: ${CLAUDE_API}`)
 

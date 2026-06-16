@@ -258,8 +258,19 @@ let lastLoggedSummary = ''
 let dashboardTokenPromise: Promise<string> | null = null
 let dashboardTokenCache = ''
 
-/** Optional bearer token for authenticated gateway endpoints. */
+/** Optional bearer token for authenticated gateway endpoints.
+ * Const evaluated at module import — may be empty if .env not yet loaded.
+ * Use getBearerToken() below for a lazy, call-time evaluation that
+ * reads from process.env after Vite's dotenv loading. */
 export const BEARER_TOKEN = process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || ''
+
+/** Same as BEARER_TOKEN but lazily evaluated at call time.
+ * Vite's dotenv loading may not have populated process.env yet when
+ * this module is first imported — use this in probe/auth code paths
+ * that run during server startup. */
+export function getBearerToken(): string {
+  return process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || ''
+}
 
 /**
  * Dashboard API auth uses the ephemeral session token injected into the
@@ -268,7 +279,8 @@ export const BEARER_TOKEN = process.env.HERMES_API_TOKEN || process.env.CLAUDE_A
  * time the dashboard restarts.
  */
 function authHeaders(): Record<string, string> {
-  return BEARER_TOKEN ? { Authorization: `Bearer ${BEARER_TOKEN}` } : {}
+  const token = getBearerToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 /**
