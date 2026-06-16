@@ -11,6 +11,10 @@ vi.mock('../../server/auth-middleware', () => ({
   isAuthenticated: () => true,
 }))
 
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(() => Buffer.from('')),
+}))
+
 vi.mock('../../server/gateway-capabilities', () => ({
   ensureGatewayProbed: vi.fn(),
   getCapabilities: () => ({ config: true }),
@@ -80,7 +84,11 @@ describe('canonical /api/hermes-config route', () => {
     expect(openrouter.isDefault).toBe(true)
   })
 
-  it('PATCH dispatches set-default-model and returns the action message', async () => {
+  it('PATCH dispatches set-default-model via hermes CLI and returns the action message', async () => {
+    const childProcess = await import('node:child_process')
+    const execMock = childProcess.execSync as ReturnType<typeof vi.fn>
+    execMock.mockClear()
+
     const handlers = await loadHandlers('./hermes-config')
     const res = await handlers.PATCH({
       request: new Request('http://localhost/api/hermes-config', {
@@ -95,9 +103,37 @@ describe('canonical /api/hermes-config route', () => {
     const body = await res.json()
 
     expect(body).toMatchObject({ ok: true, message: 'Default model updated.' })
-    expect(
-      fs.readFileSync(path.join(tmpHome, 'config.yaml'), 'utf-8'),
-    ).toMatch(/provider: openrouter/)
+    // Should dispatch via CLI, not raw YAML write
+    expect(execMock).toHaveBeenCalledTimes(2)
+    expect(execMock).toHaveBeenNthCalledWith(1, expect.stringContaining('hermes config set provider'), expect.any(Object))
+    expect(execMock).toHaveBeenNthCalledWith(2, expect.stringContaining('hermes config set model.default'), expect.any(Object))
+  })
+
+  it('PATCH returns 500 when hermes CLI fails', async () => {
+    const childProcess = await import('node:child_process')
+    const execMock = childProcess.execSync as ReturnType<typeof vi.fn>
+    execMock.mockReset()
+    execMock.mockImplementation(() => { throw new Error('CLI not found') })
+
+    const handlers = await loadHandlers('./hermes-config')
+    const res = await handlers.PATCH({
+      request: new Request('http://localhost/api/hermes-config', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'set-default-model',
+          providerId: 'openrouter',
+          modelId: 'auto',
+        }),
+      }),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain('CLI not found')
+
+    execMock.mockReset()
+    execMock.mockImplementation(() => Buffer.from(''))
   })
 
   it('PATCH legacy { config } body deep-merges and preserves siblings', async () => {

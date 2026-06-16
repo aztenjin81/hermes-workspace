@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -172,24 +173,24 @@ function applySetDefaultModel(
   paths: HermesConfigPaths,
   patch: SetDefaultModelPatch,
 ): HermesConfigPatchResult {
-  const config = readYamlConfig(paths.configPath)
-  config.provider = patch.providerId
-
-  // Preserve any nested-form extension fields (e.g. temperature, max_tokens)
-  // some Hermes deployments stash under `model: { ... }`. Only update the
-  // canonical `default`/`provider` keys; otherwise switch to flat form.
-  const existing = config.model
-  if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-    const next = { ...(existing as Record<string, unknown>) }
-    next.default = patch.modelId
-    next.provider = patch.providerId
-    config.model = next
-  } else {
-    config.model = patch.modelId
+  // Use the hermes CLI to change the model — this goes through Hermes's own
+  // config management which preserves all nested fields (base_url, api_key,
+  // api_mode, etc.) that raw YAML surgery would strip or corrupt.
+  try {
+    execSync(`hermes config set provider "${patch.providerId}"`, {
+      stdio: 'pipe',
+      timeout: 10_000,
+    })
+    execSync(`hermes config set model.default "${patch.modelId}"`, {
+      stdio: 'pipe',
+      timeout: 10_000,
+    })
+    return { ok: true }
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to set default model via hermes CLI'
+    return { ok: false, message }
   }
-
-  writeYamlConfig(paths.configPath, config)
-  return { ok: true }
 }
 
 function applySetApiKey(

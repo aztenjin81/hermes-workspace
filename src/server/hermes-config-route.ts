@@ -232,6 +232,12 @@ export async function handleHermesConfigPatch({
       )
     }
     const result = applyHermesConfigPatch(paths, parsed.data)
+    if (!result.ok) {
+      return Response.json(
+        { ok: false, error: result.message || 'Patch failed' },
+        { status: 500 },
+      )
+    }
     return Response.json({ ...result, message: ACTION_MESSAGES[parsed.data.action] })
   }
 
