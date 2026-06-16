@@ -269,7 +269,7 @@ export const BEARER_TOKEN = process.env.HERMES_API_TOKEN || process.env.CLAUDE_A
  * this module is first imported — use this in probe/auth code paths
  * that run during server startup. */
 export function getBearerToken(): string {
-  return process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || ''
+  return process.env.HERMES_API_TOKEN || process.env.CLAUDE_API_TOKEN || process.env.LITELLM_API_KEY || ''
 }
 
 /**
