@@ -958,4 +958,8 @@ export function isClaudeConnected(): boolean {
   return capabilities.health || capabilities.dashboard.available
 }
 
-void ensureGatewayProbed()
+// Deferred: probe fires on first request, not at module load.
+// Module-load probing caused LiteLLM 401s because .env vars
+// (HERMES_API_TOKEN) aren't available in process.env yet when
+// Vite's module graph is resolving imports.
+// void ensureGatewayProbed()
