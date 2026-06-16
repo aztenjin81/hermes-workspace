@@ -36,14 +36,15 @@ vi.mock('../../../server/auth-middleware', () => ({
   isAuthenticated: () => true,
 }))
 
+vi.mock('../../../server/claude-api', () => {
+  const ensureGatewayProbed = vi.fn()
+  const getGatewayCapabilities = vi.fn().mockReturnValue({ models: false })
+  return { ensureGatewayProbed, getGatewayCapabilities }
+})
+
 vi.mock('../../../server/gateway-capabilities', () => ({
   BEARER_TOKEN: '',
   CLAUDE_API: 'http://127.0.0.1:8642',
-}))
-
-vi.mock('../../../server/claude-api', () => ({
-  ensureGatewayProbed: vi.fn(),
-  getGatewayCapabilities: () => ({ models: false }),
 }))
 
 vi.mock('../../../server/local-provider-discovery', () => ({
@@ -126,5 +127,32 @@ describe('models route', () => {
     expect(json.ok).toBe(true)
     expect(json.models[0].id).toBe('nest-model')
     expect(json.models[0].provider).toBe('anthropic')
+  })
+
+  it('gracefully handles gateway model list failure without 503', async () => {
+    // Simulate gateway with models:true but no reachable backend
+    const claudeApi = await import('../../../server/claude-api')
+    ;(claudeApi.getGatewayCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ models: true })
+
+    const envHome = '/mock/profiles/no-gateway'
+    process.env.CLAUDE_HOME = envHome
+
+    const configYaml = 'model:\n  default: local-model\n  provider: local\n'
+    existsSync.mockImplementation((p: string) => p === `${envHome}/config.yaml`)
+    readFileSync.mockImplementation((p: string) => {
+      if (p === `${envHome}/config.yaml`) return configYaml
+      return ''
+    })
+
+    const get = await getHandler()
+    const request = new Request('http://localhost/api/models')
+    const res = await get({ request })
+    // Should NOT 503 — the try-catch around fetchClaudeModels should
+    // log a warning and continue with config-provided models.
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.ok).toBe(true)
+    // The default model from config.yaml should still be present
+    expect(json.models.some((m: any) => m.id === 'local-model')).toBe(true)
   })
 })
